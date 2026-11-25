@@ -24,8 +24,8 @@ vec4 effect(vec4 color, Image tex, vec2 uv, vec2 screen_coords) {
   // the 1x rasters: at uSS == 1, uvS and uvF are both exactly
   // screen_coords / uSceneSize, so supersampling changes nothing else.
   vec2 p = (screen_coords - 0.5) / uSS;
-  vec2 uvS = (p + 0.5) / uSceneSize;         // 1x rasters: sdf, irradiance
-  vec2 uvF = (p + 1.0 / uSS) / uSceneSize;   // supersampled rasters: albedo, emission
+  vec2 uvS = (p + 0.5) / uSceneSize;             // 1x rasters: sdf, irradiance
+  vec2 uvF = (p + 0.5 / uSS) / uSceneSize;       // supersampled rasters: albedo, emission
 
   if (uDebug >= 1 && uDebug <= 5) {
     // The composite is drawn with love.graphics.rectangle, and LÖVE 11.5 hands a
@@ -61,8 +61,7 @@ vec4 effect(vec4 color, Image tex, vec2 uv, vec2 screen_coords) {
   float d = distDecode(texture2D(uSdf, uvS).rg);
   vec3 alb = texture2D(uAlbedo, uvF).rgb;
   vec3 emi = texture2D(uEmission, uvF).rgb * uLightGain;
-  vec3 e = loadHDR(texture2D(uIrradiance, uvS).rgb);
-  if (uGI == 0) e = vec3(0.12);
+  vec3 e = vec3(0.12);
   vec3 col;
   if (d < 1.0) {
     float dR = distDecode(texture2D(uSdf, uvS + vec2(1.0 / uSceneSize.x, 0.0)).rg);
@@ -71,13 +70,33 @@ vec4 effect(vec4 color, Image tex, vec2 uv, vec2 screen_coords) {
     float dU = distDecode(texture2D(uSdf, uvS - vec2(0.0, 1.0 / uSceneSize.y)).rg);
     vec2 g = vec2(dR - dL, dD - dU);
     g = (length(g) < 1e-4) ? vec2(0.0, -1.0) : normalize(g);
-    vec2 sp = p;
-    for (int k = 0; k < SURFACE_STEPS; k++) {
-      if (uGI == 0) break;
-      if (distDecode(texture2D(uSdf, (sp + 0.5) / uSceneSize).rg) > 1.0) break;
-      sp = clamp(sp + g * uS0Scene, vec2(0.5), uSceneSize - 0.5);
+    // Project once to a fixed 1.5 px outside the surface. Stepping by a whole
+    // probe spacing and stopping at the first sample > 1.0 made the distance
+    // depend on how deep the pixel was inside the solid, quantised to S0 --
+    // visible as surface-parallel stripes on thick walls. The jump is capped at
+    // the old loop's reach so a clamped deep-interior distance cannot overshoot.
+    float jump = min(1.5 - d, float(SURFACE_STEPS) * uS0Scene);
+    vec2 sp = clamp(p + g * jump, vec2(0.5), uSceneSize - 0.5);
+    // The raw 4 px probe field reconstructs this shadow boundary as a
+    // staircase; on a thin, near-axis-aligned occluder that aliases into bands.
+    // Average the four probes around the sample point, skipping taps inside the
+    // SDF so the lit side never averages in dead interior probes.
+    if (uGI != 0) {
+      vec2 it = uS0Scene / uSceneSize;
+      vec2 uvi = (sp + 0.5) / uSceneSize;
+      vec3 acc = vec3(0.0);
+      float wsum = 0.0;
+      for (int by = 0; by < 2; by++)
+      for (int bx = 0; bx < 2; bx++) {
+        vec2 o = (vec2(float(bx), float(by)) - 0.5) * it;
+        if (distDecode(texture2D(uSdf, uvi + o).rg) > 0.0) {
+          acc += loadHDR(texture2D(uIrradiance, uvi + o).rgb);
+          wsum += 1.0;
+        }
+      }
+      if (wsum > 0.0) e = acc / wsum;
+      else e = loadHDR(texture2D(uIrradiance, uvi).rgb);
     }
-    if (uGI != 0) e = loadHDR(texture2D(uIrradiance, (sp + 0.5) / uSceneSize).rgb);
     col = emi + alb * e * uExposure;
   } else {
     col = mix(uSkyBottom, uSkyTop, 1.0 - uvS.y) * 0.15;

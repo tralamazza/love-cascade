@@ -288,28 +288,39 @@ end
 -- point is exactly E = Le/(1-rho) and after N bounce iterations the partial sum
 -- must be Le*(1-rho^(N+1))/(1-rho). Successive convergence deltas must shrink by
 -- rho; if they do not, the feedback is not the geometric series the model claims.
+-- The loop applies BOUNCE_GAIN to the reflection term, so the series actually
+-- converges in rho*gain and both the target and the delta ratio use that.
 -- N=0 is the rig check: the field must be exactly the direct Le, so a harness bug
 -- (wrong probe cell, mis-encoded readback) shows up before any bounce logic.
 runBounceCheck = function()
   local p = app.scene.params or {}
   local rho, le = p.rho or 0.6, p.le or 1.0
-  -- out-of-range parameters make the analytic target 0, inf or nan, and every
-  -- `nan > tol` comparison then silently passes: --le=0 used to PASS. Refuse them.
-  if not (rho > 0 and rho < 1) or not (le > 0) then
-    print(string.format("[bouncecheck] FAIL: need 0 < rho < 1 and le > 0 (got rho=%.3f le=%.3f)", rho, le))
+  local gain = config.BOUNCE_GAIN or 1.0
+  local rhoEff = rho * gain
+  local fixed = (rhoEff < 1) and le / (1 - rhoEff) or math.huge
+  -- The readback saturates at IRR_MAX, so the largest term this loop measures
+  -- (N=4 of 5 iterations) must fit; the fixed point itself may exceed it.
+  local lastTerm = (rhoEff < 1) and le * (1 - rhoEff ^ 5) / (1 - rhoEff) or math.huge
+  -- Out-of-range parameters make the analytic target 0, inf or nan, and every
+  -- `nan > tol` comparison then silently passes: --le=0 used to PASS. Refuse
+  -- all of them up front.
+  if not (rho > 0 and rho < 1) or not (rhoEff > 0 and rhoEff < 1)
+     or not (le > 0) or not (lastTerm <= config.IRR_MAX) then
+    print(string.format("[bouncecheck] FAIL: need 0 < rho*gain < 1, le > 0 and N=4 term <= IRR_MAX" ..
+      " (got rho=%.3f gain=%.3f le=%.3f N4=%.3f)", rho, gain, le, lastTerm))
     love.event.quit(1)
     return
   end
   local finite = function(x) return type(x) == "number" and x == x and x ~= math.huge end
   local probe = {320, 180}
   local tolRig, tolSeries, tolRatio = 0.03, 0.06, 0.05
-  print(string.format("bouncecheck: rho=%.2f le=%.2f probe=(%d,%d) fixed point=%.4f",
-    rho, le, probe[1], probe[2], le / (1 - rho)))
+  print(string.format("bouncecheck: rho=%.2f gain=%.2f le=%.2f probe=(%d,%d) fixed point=%.4f",
+    rho, gain, le, probe[1], probe[2], fixed))
   local prevE, prevDelta, ok, reason = nil, nil, true, nil
   for n = 0, 4 do
     app:renderAll(0, true, false, n)
     local e = sampleReadback(probe[1], probe[2])
-    local want = le * (1 - rho ^ (n + 1)) / (1 - rho)
+    local want = le * (1 - rhoEff ^ (n + 1)) / (1 - rhoEff)
     local rel = e / want - 1
     local line = string.format("  N=%d measured=%.4f analytic=%.4f rel=%+.3f", n, e, want, rel)
     if not finite(rel) then
@@ -319,9 +330,9 @@ runBounceCheck = function()
       local delta = e - prevE
       if prevDelta and prevDelta > 1e-4 then
         local ratio = delta / prevDelta
-        line = line .. string.format("  delta_ratio=%.3f (want %.2f)", ratio, rho)
-        if not finite(ratio) or math.abs(ratio - rho) > tolRatio then
-          ok, reason = false, string.format("delta ratio %.3f not rho %.3f at N=%d", ratio, rho, n)
+        line = line .. string.format("  delta_ratio=%.3f (want %.2f)", ratio, rhoEff)
+        if not finite(ratio) or math.abs(ratio - rhoEff) > tolRatio then
+          ok, reason = false, string.format("delta ratio %.3f not rho*gain %.3f at N=%d", ratio, rhoEff, n)
         end
       end
       prevDelta = delta

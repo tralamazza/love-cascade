@@ -13,16 +13,25 @@ function shaders.load(stageName, defines, extra)
   local stage = read("src/shaders/" .. stageName)
   local hdrFloat = extra and extra.hdrFloat
   local hdrDefine = hdrFloat and "#define HDR_FLOAT\n" or ""
-  local hdr = string.format("#define MAX_STEPS %d\n#define D0 %d\n#define SURFACE_STEPS %d\n#define HIT_EPS %f\n#define MIN_STEP %f\n",
-    config.MAX_STEPS, config.D0, config.SURFACE_STEPS, config.HIT_EPS, config.MIN_STEP)
+  local hdr = string.format("#define MAX_STEPS %d\n#define D0 %d\n#define SURFACE_STEPS %d\n#define HIT_EPS %f\n#define MIN_STEP %f\n#define IRR_MAX %f\n",
+    config.MAX_STEPS, config.D0, config.SURFACE_STEPS, config.HIT_EPS, config.MIN_STEP, config.IRR_MAX)
   local source = hdr .. hdrDefine .. common .. stage
   local shader, err = love.graphics.newShader(source)
   if not shader then
-    print("shader " .. stageName .. " failed: " .. tostring(err))
-    return nil
+    error("shader " .. stageName .. " failed to compile: " .. tostring(err))
   end
+  -- 11.5 returns a string whose headers ("vertex shader:", "pixel shader:")
+  -- are always present, so a plain length test reports a warning on every load.
+  -- Emit only the lines that are not headers.
   local w = shader:getWarnings()
-  if w and #w > 0 then print(stageName .. " warnings: " .. tostring(w)) end
+  if type(w) == "string" then
+    for line in w:gmatch("[^\r\n]+") do
+      line = line:match("^%s*(.-)%s*$")
+      if line ~= "" and line ~= "vertex shader:" and line ~= "pixel shader:" then
+        print(stageName .. " warning: " .. line)
+      end
+    end
+  end
   return shader, source
 end
 

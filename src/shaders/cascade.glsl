@@ -42,12 +42,12 @@ vec4 effect(vec4 color, Image tex, vec2 uv, vec2 screen_coords) {
     if (t > uT1) break;
     vec2 p = center + dir * t;
     if (p.x < 0.0 || p.y < 0.0 || p.x >= uSceneSize.x || p.y >= uSceneSize.y) break;
-    float d = distDecode(texture2D(uSdf, p / uSceneSize).rg);
+    float d = distDecode(texture2D(uSdf, (p + 0.5) / uSceneSize).rg);
     if (d < HIT_EPS) {
       hit = true;
       // the source field already carries emitter radiance and the previous
       // iteration's reflected radiance, in absolute units
-      rad = texture2D(uSource, p / uSceneSize).rgb;
+      rad = texture2D(uSource, (p + 0.5) / uSceneSize).rgb;
       break;
     }
     t += max(d - 0.5, MIN_STEP);

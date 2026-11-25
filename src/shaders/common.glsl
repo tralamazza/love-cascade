@@ -21,8 +21,8 @@ float unfixed16(vec2 e, float maxv) { return (e.x + e.y / 255.0) * maxv; }
 
 vec2  distEncode(float d) { return fixed16(d + 64.0, 2048.0); }
 float distDecode(vec2 e)  { return unfixed16(e, 2048.0) - 64.0; }
-vec2  irrEncode(float e)  { return fixed16(e, 8.0); }
-float irrDecode(vec2 e)   { return unfixed16(e, 8.0); }
+vec2  irrEncode(float e)  { return fixed16(e, IRR_MAX); }
+float irrDecode(vec2 e)   { return unfixed16(e, IRR_MAX); }
 
 #ifdef HDR_FLOAT
 vec3 storeHDR(vec3 c) { return c; }

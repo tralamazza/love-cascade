@@ -50,6 +50,6 @@ src/config.lua      every tunable (scene size, cascade spacing, bounce count, pr
 src/display.lua     HiDPI: point size vs device size per raster
 src/radiance.lua    cascade hierarchy, render graph, uniform sends
 src/scene.lua       primitives (SDF/albedo/emission rasters), demo and test scenes
-src/shaders/        scene / cascade / irradiance / bounce / compose / bloom / present
+src/shaders/        scene / cascade / irradiance / bounce / compose / bright / present
 scripts/            run.sh, test.sh
 ```
